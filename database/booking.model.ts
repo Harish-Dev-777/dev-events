@@ -1,5 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
-import { Event, EventDocument } from './event.model';
+import { Event } from './event.model';
 
 // Attributes required to create a Booking
 export interface BookingAttrs {
@@ -58,9 +58,6 @@ bookingSchema.pre<BookingDocument>('save', async function preSave(next) {
     next(err as Error);
   }
 });
-
-// Secondary index on eventId for faster queries
-bookingSchema.index({ eventId: 1 });
 
 export const Booking: BookingModel =
   (mongoose.models.Booking as BookingModel) ||

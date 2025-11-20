@@ -94,9 +94,6 @@ const eventSchema = new Schema<EventDocument, EventModel>(
   }
 );
 
-// Ensure slug is unique
-eventSchema.index({ slug: 1 }, { unique: true });
-
 // Pre-save hook: validate required fields, normalize date/time, generate slug
 eventSchema.pre<EventDocument>("save", function preSave(next) {
   try {
