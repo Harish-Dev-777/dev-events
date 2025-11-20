@@ -1,158 +1,194 @@
-import mongoose, { Document, Model, Schema } from "mongoose";
+import { Schema, model, models, Document } from "mongoose";
 
-// Attributes required to create or update an Event
-export interface EventAttrs {
+// TypeScript interface for Event document
+export interface IEvent extends Document {
   title: string;
-  slug?: string;
+  slug: string;
   description: string;
   overview: string;
   image: string;
   venue: string;
   location: string;
-  date: string; // ISO date string (YYYY-MM-DD)
-  time: string; // 24h time string (HH:mm)
+  date: string;
+  time: string;
   mode: string;
   audience: string;
   agenda: string[];
   organizer: string;
   tags: string[];
-}
-
-// Event document stored in MongoDB
-export interface EventDocument extends EventAttrs, Document {
   createdAt: Date;
   updatedAt: Date;
 }
 
-// Event model type
-export interface EventModel extends Model<EventDocument> {}
-
-// Generate a URL-friendly slug from a title
-const generateSlug = (title: string): string => {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "") // remove non-alphanumeric chars
-    .replace(/\s+/g, "-") // collapse whitespace to single dash
-    .replace(/-+/g, "-"); // collapse multiple dashes
-};
-
-// Normalize date to an ISO date string (YYYY-MM-DD)
-const normalizeDate = (value: string): string => {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    throw new Error("Invalid event date");
-  }
-
-  // Keep only the date part (UTC) for consistency
-  return date.toISOString().split("T")[0];
-};
-
-// Normalize time to 24h HH:mm format
-const normalizeTime = (value: string): string => {
-  const trimmed = value.trim();
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-
-  if (!match) {
-    throw new Error("Invalid event time format (expected HH:mm)");
-  }
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-    throw new Error("Invalid event time value");
-  }
-
-  const hh = hours.toString().padStart(2, "0");
-  const mm = minutes.toString().padStart(2, "0");
-
-  return `${hh}:${mm}`;
-};
-
-const eventSchema = new Schema<EventDocument, EventModel>(
+const EventSchema = new Schema<IEvent>(
   {
-    title: { type: String, required: true, trim: true },
-    slug: { type: String, unique: true, index: true },
-    description: { type: String, required: true, trim: true },
-    overview: { type: String, required: true, trim: true },
-    image: { type: String, required: true, trim: true },
-    venue: { type: String, required: true, trim: true },
-    location: { type: String, required: true, trim: true },
-    date: { type: String, required: true },
-    time: { type: String, required: true },
-    mode: { type: String, required: true, trim: true },
-    audience: { type: String, required: true, trim: true },
-    agenda: { type: [String], required: true },
-    organizer: { type: String, required: true, trim: true },
-    tags: { type: [String], required: true },
+    title: {
+      type: String,
+      required: [true, "Title is required"],
+      trim: true,
+      maxlength: [100, "Title cannot exceed 100 characters"],
+    },
+    slug: {
+      type: String,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: [true, "Description is required"],
+      trim: true,
+      maxlength: [1000, "Description cannot exceed 1000 characters"],
+    },
+    overview: {
+      type: String,
+      required: [true, "Overview is required"],
+      trim: true,
+      maxlength: [500, "Overview cannot exceed 500 characters"],
+    },
+    image: {
+      type: String,
+      required: [true, "Image URL is required"],
+      trim: true,
+    },
+    venue: {
+      type: String,
+      required: [true, "Venue is required"],
+      trim: true,
+    },
+    location: {
+      type: String,
+      required: [true, "Location is required"],
+      trim: true,
+    },
+    date: {
+      type: String,
+      required: [true, "Date is required"],
+    },
+    time: {
+      type: String,
+      required: [true, "Time is required"],
+    },
+    mode: {
+      type: String,
+      required: [true, "Mode is required"],
+      enum: {
+        values: ["online", "offline", "hybrid"],
+        message: "Mode must be either online, offline, or hybrid",
+      },
+    },
+    audience: {
+      type: String,
+      required: [true, "Audience is required"],
+      trim: true,
+    },
+    agenda: {
+      type: [String],
+      required: [true, "Agenda is required"],
+      validate: {
+        validator: (v: string[]) => v.length > 0,
+        message: "At least one agenda item is required",
+      },
+    },
+    organizer: {
+      type: String,
+      required: [true, "Organizer is required"],
+      trim: true,
+    },
+    tags: {
+      type: [String],
+      required: [true, "Tags are required"],
+      validate: {
+        validator: (v: string[]) => v.length > 0,
+        message: "At least one tag is required",
+      },
+    },
   },
   {
-    timestamps: true, // automatically manage createdAt / updatedAt
-    strict: true,
+    timestamps: true, // Auto-generate createdAt and updatedAt
   }
 );
 
-// Pre-save hook: validate required fields, normalize date/time, generate slug
-eventSchema.pre<EventDocument>("save", function preSave(next) {
-  try {
-    // Validate non-empty required string fields
-    const requiredStringFields: (keyof EventAttrs)[] = [
-      "title",
-      "description",
-      "overview",
-      "image",
-      "venue",
-      "location",
-      "date",
-      "time",
-      "mode",
-      "audience",
-      "organizer",
-    ];
+// Pre-save hook for slug generation and data normalization
+EventSchema.pre("save", function (next) {
+  const event = this as IEvent;
 
-    for (const field of requiredStringFields) {
-      const value = this[field];
-      if (typeof value !== "string" || value.trim().length === 0) {
-        throw new Error(`Field "${String(field)}" is required`);
-      }
-    }
-
-    // Validate required array fields
-    const requiredArrayFields: (keyof EventAttrs)[] = ["agenda", "tags"];
-
-    for (const field of requiredArrayFields) {
-      const value = this[field];
-      if (!Array.isArray(value) || value.length === 0) {
-        throw new Error(`Field "${String(field)}" must be a non-empty array`);
-      }
-      if (
-        value.some(
-          (item) => typeof item !== "string" || item.trim().length === 0
-        )
-      ) {
-        throw new Error(
-          `Field "${String(field)}" must contain only non-empty strings`
-        );
-      }
-    }
-
-    // Normalize date and time to consistent formats
-    this.date = normalizeDate(this.date);
-    this.time = normalizeTime(this.time);
-
-    // Regenerate slug only when title has changed or slug is missing
-    if (this.isModified("title") || !this.slug) {
-      this.slug = generateSlug(this.title);
-    }
-
-    next();
-  } catch (err) {
-    next(err as Error);
+  // Generate slug only if title changed or document is new
+  if (event.isModified("title") || event.isNew) {
+    event.slug = generateSlug(event.title);
   }
+
+  // Normalize date to ISO format if it's not already
+  if (event.isModified("date")) {
+    event.date = normalizeDate(event.date);
+  }
+
+  // Normalize time format (HH:MM)
+  if (event.isModified("time")) {
+    event.time = normalizeTime(event.time);
+  }
+
+  next();
 });
 
-export const Event: EventModel =
-  (mongoose.models.Event as EventModel) ||
-  mongoose.model<EventDocument, EventModel>("Event", eventSchema);
+// Helper function to generate URL-friendly slug
+function generateSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "") // Remove special characters
+    .replace(/\s+/g, "-") // Replace spaces with hyphens
+    .replace(/-+/g, "-") // Replace multiple hyphens with single hyphen
+    .replace(/^-|-$/g, ""); // Remove leading/trailing hyphens
+}
+
+// Helper function to normalize date to ISO format
+function normalizeDate(dateString: string): string {
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) {
+    throw new Error("Invalid date format");
+  }
+  return date.toISOString().split("T")[0]; // Return YYYY-MM-DD format
+}
+
+// Helper function to normalize time format
+function normalizeTime(timeString: string): string {
+  // Handle various time formats and convert to HH:MM (24-hour format)
+  const timeRegex = /^(\d{1,2}):(\d{2})(\s*(AM|PM))?$/i;
+  const match = timeString.trim().match(timeRegex);
+
+  if (!match) {
+    throw new Error("Invalid time format. Use HH:MM or HH:MM AM/PM");
+  }
+
+  let hours = parseInt(match[1]);
+  const minutes = match[2];
+  const period = match[4]?.toUpperCase();
+
+  if (period) {
+    // Convert 12-hour to 24-hour format
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+  }
+
+  if (
+    hours < 0 ||
+    hours > 23 ||
+    parseInt(minutes) < 0 ||
+    parseInt(minutes) > 59
+  ) {
+    throw new Error("Invalid time values");
+  }
+
+  return `${hours.toString().padStart(2, "0")}:${minutes}`;
+}
+
+// Create unique index on slug for better performance
+EventSchema.index({ slug: 1 }, { unique: true });
+
+// Create compound index for common queries
+EventSchema.index({ date: 1, mode: 1 });
+
+const Event = models.Event || model<IEvent>("Event", EventSchema);
+
+export default Event;
